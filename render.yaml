@@ -2,7 +2,7 @@ services:
   - type: web
     name: bitespeed-identity
     env: node
-    buildCommand: npm install && npm run build && npx prisma generate
+    buildCommand: npm install && npm run build && npx prisma generate && npx prisma db push
     startCommand: npm start
     plan: free
     envVars:
