@@ -1,118 +1,119 @@
-# Bitespeed Identity Reconciliation
+🧩 Bitespeed Identity Reconciliation Service
 
-A backend service that consolidates customer identity across multiple purchases, even when they use different emails or phone numbers.
+This project is a backend service built to solve a very practical problem:
 
----
+Customers often use different emails or phone numbers while making purchases.
+This service intelligently links those interactions to a single identity.
 
-## 🚀 Tech Stack
+So even if someone signs up with:
 
-- **Runtime**: Node.js + TypeScript
-- **Framework**: Express.js
-- **ORM**: Prisma
-- **Database**: PostgreSQL
-- **Deployment**: Railway / Render / Fly.io
+email A today
 
----
+phone B tomorrow
 
-## 📁 Project Structure
+We still know it's the same person.
 
-```
-bitespeed/
-├── src/
-│   ├── routes/
-│   │   └── identify.route.ts       # Route definitions
-│   ├── controllers/
-│   │   └── identify.controller.ts  # Request/response handling
-│   ├── services/
-│   │   └── identify.service.ts     # Core business logic ⭐
-│   ├── prisma.ts                   # Prisma client singleton
-│   ├── app.ts                      # Express app setup
-│   └── server.ts                   # Server entry point
-├── prisma/
-│   ├── schema.prisma               # Database schema
-│   └── migrations/                 # SQL migrations
-├── .env.example                    # Environment variables template
-├── package.json
-└── tsconfig.json
-```
+🚀 Tech Stack Used
 
----
+I chose tools that are simple, scalable and production-friendly:
 
-## ⚙️ Local Setup
+Node.js + TypeScript → for type safety and maintainability
 
-### 1. Clone and install dependencies
+Express.js → lightweight API framework
 
-```bash
+Prisma ORM → clean and safe DB interaction
+
+PostgreSQL → relational DB for structured identity linking
+
+Docker (optional) → easy local DB setup
+
+Railway / Render / Fly.io → deployment options
+
+📁 Project Structure (Simple Breakdown)
+
+Here’s how the code is organized:
+
+src/
+ ├── routes/
+ │    identify.route.ts      → API route
+ ├── controllers/
+ │    identify.controller.ts → Handles request & response
+ ├── services/
+ │    identify.service.ts    → Main identity logic ⭐
+ ├── prisma.ts               → Prisma client setup
+ ├── app.ts                  → Express config
+ └── server.ts               → Server entry point
+
+prisma/
+ ├── schema.prisma           → DB schema
+ └── migrations/             → Migration history
+
+👉 The real brain of this system lives in:
+
+src/services/identify.service.ts
+⚙️ How to Run Locally
+Step 1 — Clone the repo
 git clone <your-repo-url>
 cd bitespeed
 npm install
-```
+Step 2 — Setup environment variables
 
-### 2. Set up environment variables
+Create .env file:
 
-```bash
 cp .env.example .env
-# Edit .env with your database credentials
-```
 
-### 3. Set up PostgreSQL
+Add your database connection:
 
-**Option A — Local PostgreSQL:**
-```bash
-# Make sure PostgreSQL is running, then:
+DATABASE_URL="postgresql://postgres:password@localhost:5432/bitespeed"
+Step 3 — Setup PostgreSQL
+
+You have 2 options 👇
+
+Option A — Use Local PostgreSQL
+
+Make sure Postgres is running:
+
 createdb bitespeed
-```
+Option B — Use Docker (Recommended)
 
-**Option B — Docker:**
-```bash
+If you don’t want to install Postgres locally:
+
 docker run --name bitespeed-pg \
   -e POSTGRES_PASSWORD=password \
   -e POSTGRES_DB=bitespeed \
   -p 5432:5432 \
   -d postgres
-```
-
-Update your `.env`:
-```
-DATABASE_URL="postgresql://postgres:password@localhost:5432/bitespeed"
-```
-
-### 4. Run database migrations
-
-```bash
+Step 4 — Run DB Migration
 npm run prisma:migrate
-# or to just push schema without migrations:
+
+OR quick sync:
+
 npm run prisma:push
-```
-
-### 5. Start development server
-
-```bash
+Step 5 — Start Server
 npm run dev
-```
 
-Server starts at `http://localhost:3000`
+Server will start at:
 
----
+http://localhost:3000
+🔌 API Endpoints
+➜ POST /identify
 
-## 🔌 API Reference
+This is the main endpoint.
 
-### POST `/identify`
+It links contacts based on:
 
-Identifies and consolidates a contact.
+email
 
-**Request Body:**
-```json
+phone number
+
+You must send at least one.
+
+Request
 {
   "email": "user@example.com",
   "phoneNumber": "1234567890"
 }
-```
-
-> At least one of `email` or `phoneNumber` is required.
-
-**Response:**
-```json
+Response
 {
   "contact": {
     "primaryContactId": 1,
@@ -121,85 +122,106 @@ Identifies and consolidates a contact.
     "secondaryContactIds": [2, 3]
   }
 }
-```
+➜ GET /health
 
-### GET `/health`
+Basic health check to verify server is running.
 
-Health check endpoint.
+🧠 Identity Logic Explained (Human Version)
 
----
+Here’s how the system thinks:
 
-## 🧠 Business Logic
+✅ Case 1 — New User
 
-### Case 1 — No existing contact
-Creates a new **primary** contact.
+No match found → create a primary contact
 
-### Case 2 — Contact already exists (exact match)
-Returns the consolidated contact group.
+✅ Case 2 — Exact Match
 
-### Case 3 — Partial match (new info)
-A contact with the email OR phone exists, but the combination is new.
-→ Creates a new **secondary** contact linked to the existing primary.
+Same email + phone already exists → return existing identity
 
-### Case 4 — Two separate primary contacts match
-Email matches one primary, phone matches a different primary.
-→ The **older** primary stays. The **newer** one is demoted to secondary.
-→ All secondaries of the demoted primary are re-linked to the true primary.
+✅ Case 3 — Partial Match
 
----
+Example:
 
-## 🧪 Testing with cURL
+Existing → same phone
 
-```bash
-# Create first contact
+New → different email
+
+➡️ Create a secondary contact
+
+Linked to the original primary.
+
+✅ Case 4 — Conflict Case
+
+Example:
+
+Email matches one primary
+
+Phone matches another primary
+
+Now we merge.
+
+Rules:
+
+Oldest contact remains Primary
+
+Newer becomes Secondary
+
+All linked secondaries move under oldest primary
+
+This ensures:
+
+👉 One single source of truth per customer
+
+🧪 Quick Testing with cURL
+# First entry → becomes primary
 curl -X POST http://localhost:3000/identify \
   -H "Content-Type: application/json" \
   -d '{"email": "lorraine@hillvalley.edu", "phoneNumber": "123456"}'
-
-# Create contact with same phone, new email → becomes secondary
+# Same phone, new email → secondary
 curl -X POST http://localhost:3000/identify \
   -H "Content-Type: application/json" \
   -d '{"email": "mcfly@hillvalley.edu", "phoneNumber": "123456"}'
-
 # Query by email only
 curl -X POST http://localhost:3000/identify \
   -H "Content-Type: application/json" \
   -d '{"email": "lorraine@hillvalley.edu"}'
-```
+🚢 Deployment
 
----
+You can deploy easily using:
 
-## 🚢 Deployment
+Render
 
-### Railway (Recommended)
+Use:
 
-1. Push code to GitHub
-2. Create a new project on [Railway](https://railway.app)
-3. Add a PostgreSQL service
-4. Deploy your GitHub repo
-5. Set `DATABASE_URL` environment variable (Railway auto-provides this)
-6. Set `PORT` if needed (Railway sets it automatically)
+Build Command
 
-### Render
+npm install && npx prisma generate && npm run build
 
-1. Create a new **Web Service** on [Render](https://render.com)
-2. Connect your GitHub repo
-3. Set build command: `npm install && npx prisma generate && npm run build`
-4. Set start command: `npx prisma migrate deploy && npm start`
-5. Add a **PostgreSQL** database and link `DATABASE_URL`
+Start Command
 
-### Environment Variables to Set
+npx prisma migrate deploy && npm start
+🌟 Important Notes
 
-| Variable | Description |
-|----------|-------------|
-| `DATABASE_URL` | PostgreSQL connection string |
-| `PORT` | Server port (usually auto-set by platform) |
-| `NODE_ENV` | Set to `production` |
+Soft delete supported via deletedAt
 
----
+Oldest contact always remains primary
 
-## 📝 Notes
+Emails & phones are deduplicated
 
-- Soft deletes are supported via `deletedAt` field (contacts with `deletedAt` set are excluded from queries)
-- The primary contact is always the **oldest** one when merging
-- All emails/phone numbers in the response are deduplicated, with primary's values listed first
+Response always returns unified identity
+
+📌 Final Thought
+
+This service focuses on solving a real-world backend problem:
+
+👉 Maintaining customer identity consistency across multiple interactions.
+
+It is designed to be:
+
+Simple
+
+Logical
+
+Scalable
+
+Production-ready
