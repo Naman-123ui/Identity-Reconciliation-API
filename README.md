@@ -1,343 +1,167 @@
-# Bitespeed Identity Reconciliation
+# Identity Reconciliation API
 
-A backend service that identifies and reconciles customer contacts across multiple interactions. When a customer reaches out via different email addresses or phone numbers, this system finds or creates the connections between them and consolidates their identity.
+A service that identifies and reconciles customer contacts across multiple communication channels (email and phone).
 
-## Problem & Solution
-
-Real-world customer data is messy. A customer might contact you with:
-- Email on day 1, phone number on day 2
-- Different email addresses across platforms
-- Shared devices or accounts in families
-
-Without identity reconciliation, you end up with duplicate contact records, fragmented communication history, and poor customer data quality.
-
-This service solves that by maintaining a graph of related contacts. When a new identify request comes in, it:
-1. Finds all existing contacts that match the email or phone number
-2. Links them under a single primary contact
-3. Returns a consolidated view of all known identities for that person
-
-## Tech Stack
-
-- **Express.js** - HTTP server framework
-- **TypeScript** - Type-safe JavaScript for catching errors at compile time
-- **Prisma** - Type-safe database ORM for easier queries and migrations
-- **PostgreSQL** - Relational database
-- **Docker** - Optional containerization for development
-
-## How It Works
-
-The system models contacts as a graph with two types of nodes:
-
-**Primary Contact**: The authoritative record. All other related contacts point to this one.
-
-**Secondary Contact**: A record that's been linked to a primary contact because it shares an email or phone number.
-
-When you call `/identify`:
-
-1. **Search**: Find all non-deleted contacts matching the provided email and/or phone number
-2. **No match**: Create a new primary contact
-3. **One match**: Use its root primary contact
-4. **Multiple matches**: Find all root primaries, keep the oldest one as the true primary, demote others to secondary, and consolidate their secondaries under the true primary
-5. **New info**: If the request contains an email or phone number not yet in the system, create a new secondary contact under the primary
-6. **Return**: Send back the primary contact ID, all emails, all phone numbers, and list of secondary IDs
-
-This approach ensures:
-- No lost information (all emails and phones are preserved)
-- One source of truth (the primary contact)
-- No circular links (each secondary points directly to a primary)
-- Predictable behavior (oldest contact wins in a conflict)
-
-## Project Structure
+## Live Endpoint
 
 ```
-src/
-├── app.ts                 # Express app setup with middleware and routes
-├── server.ts              # Entry point; starts the server
-├── prisma.ts              # Prisma client instance import
-├── controllers/
-│   └── identify.controller.ts   # Request validation and response handling
-├── routes/
-│   └── identify.route.ts        # Route definitions
-└── services/
-    └── identify.service.ts      # Core business logic
-
-prisma/
-├── schema.prisma          # Database schema definition
-└── migrations/            # Versioned database changes
+https://identity-reconciliation-api-1-tow8.onrender.com
 ```
 
-## Local Setup
+## API Endpoints
+
+### Health Check
+```
+GET /health
+```
+Quick status check for deployment monitoring.
+
+### Identify Contact
+```
+POST /identify
+```
+The main endpoint. Identifies a customer, links related contacts, and returns consolidated contact information.
+
+## Request & Response Examples
+
+### Request
+```json
+{
+  "email": "john@example.com",
+  "phoneNumber": "+919999999999"
+}
+```
+
+**Fields:**
+- `email` (optional): Customer's email address
+- `phoneNumber` (optional): Customer's phone number
+- **Note:** At least one field must be provided
+
+### Response
+```json
+{
+  "contact": {
+    "primaryContactId": 1,
+    "emails": ["john@example.com", "john.doe@work.com"],
+    "phoneNumbers": ["+919999999999", "+919876543210"],
+    "secondaryContactIds": [2, 3]
+  }
+}
+```
+
+**Fields:**
+- `primaryContactId`: The root contact ID for this customer
+- `emails`: All unique emails linked to this customer
+- `phoneNumbers`: All unique phone numbers linked to this customer
+- `secondaryContactIds`: IDs of related contacts (merged or linked)
+
+## Quick Start
 
 ### Prerequisites
-
 - Node.js 18+ and npm
-- PostgreSQL 15+ running locally, or Docker installed
-- Git
+- PostgreSQL database
 
-### Installation
-
+### Install Dependencies
 ```bash
-# Clone the repository
-git clone <repo-url>
-cd Bitespeed_Assignment
-
-# Install dependencies
 npm install
-
-# Generate Prisma client (required for TypeScript definitions)
-npm run prisma:generate
 ```
 
-### Database Setup
-
-**Option 1: Local PostgreSQL**
-
-```bash
-# Create a .env file in the project root
-cat > .env << EOF
-DATABASE_URL="postgresql://user:password@localhost:5432/bitespeed"
-EOF
-
-# Replace 'user' and 'password' with your PostgreSQL credentials
-
-# Run migrations
-npm run prisma:migrate
+### Environment Setup
+Create a `.env` file in the project root:
+```env
+DATABASE_URL=postgresql://user:password@localhost:5432/bitespeed
+PORT=3000
+NODE_ENV=development
 ```
 
-**Option 2: Docker PostgreSQL**
-
-```bash
-# Start a PostgreSQL container
-docker run -d \
-  --name bitespeed-db \
-  -e POSTGRES_USER=bitespeed \
-  -e POSTGRES_PASSWORD=password \
-  -e POSTGRES_DB=bitespeed \
-  -p 5432:5432 \
-  postgres:15-alpine
-
-# Create .env with Docker connection
-cat > .env << EOF
-DATABASE_URL="postgresql://bitespeed:password@localhost:5432/bitespeed"
-EOF
-
-# Run migrations
-npm run prisma:migrate
-```
-
-### Running the Server
-
-**Development** (with hot reload):
+### Run in Development
 ```bash
 npm run dev
 ```
+The server will start on `http://localhost:3000` with auto-reload enabled.
 
-**Production** (build and start):
+### Production Build
 ```bash
 npm run build
 npm start
 ```
 
-The server starts on port `8001` by default.
-
-Verify it's running:
+### Database Commands
 ```bash
-curl http://localhost:8001/health
-```
-
-## API Documentation
-
-### POST `/identify`
-
-Identify or reconcile a contact.
-
-**Request Body:**
-```json
-{
-  "email": "alice@example.com",
-  "phoneNumber": "9123456789"
-}
-```
-
-At least one of `email` or `phoneNumber` must be provided. Both are optional.
-
-**Response (200 OK):**
-```json
-{
-  "contact": {
-    "primaryContactId": 1,
-    "emails": ["alice@example.com", "alice.smith@work.com"],
-    "phoneNumbers": ["9123456789", "9198765432"],
-    "secondaryContactIds": [2, 4]
-  }
-}
-```
-
-**Error Responses:**
-- `400 Bad Request` - Missing email and phoneNumber, or invalid types
-- `500 Internal Server Error` - Database error or unhandled exception
-
-### GET `/health`
-
-Health check endpoint.
-
-**Response (200 OK):**
-```json
-{
-  "status": "ok",
-  "timestamp": "2025-06-15T10:30:45.123Z",
-  "service": "bitespeed-identity-reconciliation"
-}
-```
-
-## Business Logic in Action
-
-### Scenario 1: New Contact
-Request: `email="alice@example.com", phoneNumber=null`
-
-- No existing contacts found
-- Create primary contact with ID 1
-- Return: `{ primaryContactId: 1, emails: ["alice@example.com"], phoneNumbers: [], secondaryContactIds: [] }`
-
-### Scenario 2: Exact Match
-Previous state:
-- Contact 1 (primary): alice@example.com, 9123456789
-
-Request: `email="alice@example.com", phoneNumber="9123456789"`
-
-- Contact 1 matches both
-- Already linked, no change needed
-- Return consolidated view of Contact 1
-
-### Scenario 3: Partial Match (Secondary Created)
-Previous state:
-- Contact 1 (primary): alice@example.com, null
-
-Request: `email="alice@example.com", phoneNumber="9123456789"`
-
-- Contact 1 matches via email
-- Phone number is new information
-- Create Contact 2 (secondary) linked to Contact 1 with the phone number
-- Return: `{ primaryContactId: 1, emails: ["alice@example.com"], phoneNumbers: ["9123456789"], secondaryContactIds: [2] }`
-
-### Scenario 4: Merging Primaries (Conflict Resolution)
-Previous state:
-- Contact 1 (primary): alice@example.com, created Jan 1
-- Contact 3 (primary): bob@example.com, created Jan 2
-- Contact 2 (secondary): linked to Contact 1
-- Contact 4 (secondary): linked to Contact 3
-
-Request: `email="alice@example.com", phoneNumber="9123456789"` where Contact 3 also has this phone
-
-- Contacts 1 and 3 are both root primaries
-- Contact 1 is older, so it becomes the true primary
-- Contact 3 becomes secondary to Contact 1
-- Contact 4 (was secondary to Contact 3) is re-linked to Contact 1
-- All data consolidated under Contact 1
-
-## Testing with Curl
-
-**Create a new contact:**
-```bash
-curl -X POST http://localhost:8001/identify \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "alice@example.com",
-    "phoneNumber": "9123456789"
-  }'
-```
-
-**Link an existing contact:**
-```bash
-curl -X POST http://localhost:8001/identify \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "alice@example.com",
-    "phoneNumber": null
-  }'
-```
-
-**Test error handling:**
-```bash
-# Missing both email and phoneNumber
-curl -X POST http://localhost:8001/identify \
-  -H "Content-Type: application/json" \
-  -d '{}'
-```
-
-**Check server health:**
-```bash
-curl http://localhost:8001/health
-```
-
-## Useful Development Commands
-
-```bash
-# Open Prisma Studio (GUI for database)
-npm run prisma:studio
-
-# Reset database (careful!)
-npx prisma migrate reset
-
-# Create a new migration after schema changes
+# Run migrations
 npm run prisma:migrate
 
-# View generated TypeScript types
-cat node_modules/.prisma/client/index.d.ts
+# Push schema to database (for first setup or testing)
+npm run prisma:push
+
+# Open Prisma Studio (visual database explorer)
+npm run prisma:studio
 ```
 
-## Deployment
+## Project Architecture
 
-### Render
+```
+src/
+├── server.ts              # Entry point; initializes and starts the Express server
+├── app.ts                 # Express app configuration (middleware, routes, error handling)
+├── prisma.ts              # Prisma client instance export
+├── controllers/
+│   └── identify.controller.ts   # HTTP request handler—validates input, calls service, returns response
+├── routes/
+│   └── identify.route.ts        # Route definitions; wires POST /identify to controller
+└── services/
+    └── identify.service.ts      # Core business logic; handles contact matching, linking, and merging
 
-The `render.yaml` file is configured for deployment to Render:
+prisma/
+├── schema.prisma          # Database schema; defines Contact model and LinkPrecedence enum
+└── migrations/            # Versioned migrations tracking schema changes
+```
 
-1. Connect your GitHub repository to Render
-2. Render automatically detects and runs the build command
-3. Set `DATABASE_URL` environment variable to your PostgreSQL instance
-4. Deploy starts the service
+**Flow:**
+1. Request hits Express route (`/identify`)
+2. Route delegates to controller
+3. Controller validates input
+4. Controller calls service with validated data
+5. Service executes business logic (search, link, merge, respond)
+6. Service returns consolidated contact info
+7. Controller returns JSON response
 
+**Data Model:**
+- `Contact` table with `id`, `email`, `phoneNumber`, `linkedId`, `linkPrecedence`
+- Each contact is either primary or secondary
+- Secondaries point to their primary via `linkedId`
+- `deletedAt` field for soft deletes (data preservation)
 
-## Key Design Decisions
+## How It Works
 
-**1. Oldest Primary Wins**
-When multiple primary contacts are linked, the oldest one becomes the source of truth. This is predictable and prevents unnecessary churn when old records are suddenly re-linked.
+When you call `/identify` with an email and/or phone number, the system:
 
-**2. Direct Linking Only**
-Secondaries link directly to their primary, not in a chain. This prevents accidentally breaking the graph if an intermediate secondary is deleted.
+### New Customer
+If neither the email nor phone exists in the database, a new **primary contact** is created and returned.
 
-**3. No Cascading Deletes**
-When a contact is soft-deleted (`deletedAt` set), it doesn't affect linked contacts. This preserves the relationship graph for historical queries.
+### Existing Customer
+If a contact with that email or phone already exists, the system returns their consolidated information.
 
-**4. New Info = New Secondary**
-Rather than updating an existing secondary, we create a new one when new email/phone combinations arrive. This preserves historical audit trails and prevents accidental overwrites.
+### Linking Contacts
+If you provide an email that belongs to Contact A and a phone that belongs to Contact B, the system recognizes they're the same person and:
+- Marks the oldest as **primary** (the authoritative record)
+- Links the newer one(s) as **secondary** (pointing back to primary)
+- Returns all emails and phones under the primary
 
-**5. Email and Phone Normalization**
-Inputs are trimmed of whitespace. No lowercasing is done (allowing case-sensitive matching when needed). This keeps the system simple while handling common whitespace issues.
+### Merging Multiple Records
+If multiple customers could be linked together (e.g., Contact A and C both have email matches, but Contact C also matches a phone that Contact B has), all are merged:
+- The oldest contact remains primary
+- All others become secondary to it
+- All their data rolls up into the consolidated response
 
-## Assumptions
+### New Information
+Each request that adds a previously unknown email or phone creates a new secondary contact record. This maintains a complete history and prevents accidental overwrites.
 
-- **Emails and phone numbers are unique within a person.** Someone won't have multiple primary contacts with the same email.
-- **The request email and phone are both correct.** If a customer provides conflicting information, we treat it as a new record.
-- **PostgreSQL is the database.** The schema uses PostgreSQL-specific features like autoincrement.
-- **In-memory operation is acceptable.** No caching or async processing is used; requests are synchronous.
-- **No soft deletes on the Contact table itself.** Soft deletes via `deletedAt` are used for data preservation, but the service still functions correctly when contacts are logically deleted.
+## Tech Stack
 
-## Troubleshooting
-
-**"Database URL is not set"**
-- Make sure `.env` file exists in the project root with a valid `DATABASE_URL`
-
-**"relation 'public.Contact' does not exist"**
-- Run `npm run prisma:migrate` to create tables
-
-**"ECONNREFUSED" when connecting to PostgreSQL**
-- Check that PostgreSQL is running and accessible at the connection string URL
-- Verify username, password, and database name
-
-**Port 8001 already in use**
-- Change the port in `src/server.ts` or kill the process using that port
-
-## Questions or Issues?
-
-Check the service logs for detailed error messages. The app logs all requests with timestamps for debugging.
+- **Runtime:** Node.js
+- **Language:** TypeScript
+- **Web Framework:** Express.js
+- **Database:** PostgreSQL
+- **ORM:** Prisma
+- **Development:** ts-node-dev (hot reload)
